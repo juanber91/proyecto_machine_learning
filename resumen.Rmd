@@ -1,0 +1,31 @@
+---
+title: "Resumen"
+author: "Juan B. Martínez Parente y Elizabeth Viveros Vergara"
+date: "24 de noviembre de 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Resumen del proyecto
+
+Para el proyecto final de Aprendizaje Estadístico consideraremos dos bases de datos:
+
+- Listado de propiedades en Airbnb para Berlín, París, Ámsterdam y Barcelona (descargadas en [Inside Airbnb](http://insideairbnb.com/get-the-data.html)) con variables descriptivas de cada propiedad (como número de cuartos, número de baños, ubicación, tamaño, etc.), además de inforamción de los _hosts_, _ratings_, entre otros.
+
+- Información recopilada de fuentes del [Coneval](http://coneval.org.mx) y del [INEGI](http://sc.inegi.org.mx/cobdem/contenido.jsp?rf=false&solicitud=) a nivel municipio provenientes de diferentes encuestas de 2010 y relacionadas con la pobreza y pobreza extrema (rubros de salud, educación, vivienda, seguridad, economía).
+
+Nuestro objetivo es probar varios modelos para predecir, en el primer caso, el precio por una noche en una propiedad de Airbnb con determinadas características, y, en el segundo caso, si los habitantes de un municipio viven o no en pobreza extrema. Esto con el fin de comparar el desempeño de distintas familias de modelos.
+
+Utilizaremos R y Python para programar los siguientes modelos:
+
+- regresión lineal con regularización,
+
+- redes neuronales,
+
+- bosques aleatorios,
+
+- árboles extremadamente aleatorizados (_extremely randomized trees_).
+
