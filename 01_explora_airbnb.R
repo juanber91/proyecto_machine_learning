@@ -3,9 +3,11 @@ library(data.table)
 library(magrittr)
 
 # Cargamos datos y limpiamos ----------------------------------------------
-archivos <- list.files('datos/')
+archivos <- list.files('datos/', pattern = 'csv', recursive = F)
 
-listings_raw <- map(archivos, ~fread(paste0('datos/', .),  encoding = 'UTF-8')) %>% 
+listings_raw <- map(archivos, ~fread(paste0('datos/', .),
+                                     colClasses = 'text',
+                                     encoding = 'UTF-8')) %>% 
   bind_rows
 
 listings_raw %<>% 
@@ -15,20 +17,27 @@ listings_raw %<>%
             market:country_code, amenities, host_verifications)) %>% 
   mutate(price = parse_number(price),
          zipcode = as.numeric(zipcode)) %>% 
+  mutate_at(vars(id, review_scores_rating, accommodates, bathrooms, bedrooms,
+                 beds, guests_included),
+            funs(as.numeric)) %>% 
   filter(country != 'Switzerland')
 
 listing_mod <- listings_raw %>% 
-  select(id, country, price, review_scores_rating, room_type, accommodates, bathrooms, 
-           bedrooms, neighbourhood_group_cleansed, zipcode) %>% 
+  select(id, country, price, review_scores_rating, room_type,
+         accommodates, bathrooms, beds, guests_included,
+           bedrooms, neighbourhood_group_cleansed, latitude, longitude) %>% 
   na.omit() %>% 
   mutate_if(is.character, funs(as.factor)) %>% 
-  filter(price > 0, price <= 250)
+  filter(price > 0, price <= 250) %>% 
+  mutate(longitude = round(as.numeric(as.character(longitude)), 3),
+         latitude = round(as.numeric(as.character(latitude)), 3)) %>% 
+  mutate_if(is.numeric, funs(log1))
 
-listing_mod %>% str
-data.frame(colSums(is.na(listing_mod)))
-
-set.seed(815)
-listing_mod$price %>% quantile(seq(0, 1, 0.01))
+# listing_mod %>% str
+# data.frame(colSums(is.na(listing_mod)))
+# 
+# set.seed(815)
+# listing_mod$price %>% quantile(seq(0, 1, 0.01))
 
 
 # Entrenamiento y prueba --------------------------------------------------
@@ -36,8 +45,12 @@ entrena <- sample_frac(listing_mod, 0.75)
 prueba <- listing_mod %>% filter(!id %in% entrena$id) %>% select(-id)
 entrena %<>% select(-id)
 
+save(entrena, prueba, file = 'datos/bases_airbnb.RData')
+
+# Modelo lineal -----------------------------------------------------------
 modelo <- lm(price ~ country + review_scores_rating + accommodates + bathrooms + 
-               bedrooms + room_type,
+               bedrooms + room_type + latitude:longitude +
+               beds + guests_included,
              data = entrena)
 
 summary(modelo)
@@ -45,9 +58,12 @@ summary(modelo)
 
 # Boosting ----------------------------------------------------------------
 library(gbm)
-mod_boosting <- gbm(log(price) ~.,  data = entrena,
+mod_boosting <- gbm(price ~ country + review_scores_rating + accommodates + bathrooms + 
+                      bedrooms + room_type + latitude:longitude +
+                      beds + guests_included,
+                    data = entrena,
                     distribution = 'laplace',
-                    n.trees = 200, 
+                    n.trees = 400, 
                     interaction.depth = 3,
                     shrinkage = 1, # tasa de aprendizaje
                     bag.fraction = 1,
@@ -56,14 +72,18 @@ mod_boosting <- gbm(log(price) ~.,  data = entrena,
 mod_boosting
 summary(mod_boosting)
 
-df <- data.frame(pred = predict(mod_boosting, prueba), obs = log(prueba$price))
+# df <- data.frame(pred = predict(mod_boosting, prueba), obs = log(prueba$price))
+df <- data.frame(pred = exp(predict(mod_boosting, prueba)), 
+                 obs = exp(prueba$price),
+                 country = prueba$country)
 
 df %>% 
 ggplot(aes(obs, pred)) +
-  geom_point() +
+  geom_point(aes(color = country)) +
   geom_abline() +
   coord_equal() +
   scale_x_continuous(labels = scales::comma) +
   scale_y_continuous(labels = scales::comma) +
   theme_minimal()
 
+mod_boosting$train.error
