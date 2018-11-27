@@ -2,6 +2,7 @@ library(tidyverse)
 library(data.table)
 library(magrittr)
 
+<<<<<<< Updated upstream
 # Cargamos datos y limpiamos ----------------------------------------------
 archivos <- list.files('datos/', pattern = 'csv', recursive = F)
 
@@ -50,6 +51,13 @@ save(entrena, prueba, file = 'datos/bases_airbnb.RData')
 # Modelo lineal -----------------------------------------------------------
 modelo <- lm(price ~ country + review_scores_rating + accommodates + bathrooms + 
                bedrooms + room_type + latitude:longitude +
+=======
+
+# Modelo lineal -----------------------------------------------------------
+modelo <- lm(price ~ country + review_scores_rating + accommodates + bathrooms + 
+               bedrooms + room_type + property_type + bed_type +
+               latitude:longitude + reviews_per_month +
+>>>>>>> Stashed changes
                beds + guests_included,
              data = entrena)
 
@@ -59,7 +67,12 @@ summary(modelo)
 # Boosting ----------------------------------------------------------------
 library(gbm)
 mod_boosting <- gbm(price ~ country + review_scores_rating + accommodates + bathrooms + 
+<<<<<<< Updated upstream
                       bedrooms + room_type + latitude:longitude +
+=======
+                      bedrooms + room_type + property_type + bed_type +
+                      latitude:longitude + reviews_per_month +
+>>>>>>> Stashed changes
                       beds + guests_included,
                     data = entrena,
                     distribution = 'laplace',
@@ -73,8 +86,13 @@ mod_boosting
 summary(mod_boosting)
 
 # df <- data.frame(pred = predict(mod_boosting, prueba), obs = log(prueba$price))
+<<<<<<< Updated upstream
 df <- data.frame(pred = exp(predict(mod_boosting, prueba)), 
                  obs = exp(prueba$price),
+=======
+df <- data.frame(pred = predict(mod_boosting, prueba), 
+                 obs = prueba$price,
+>>>>>>> Stashed changes
                  country = prueba$country)
 
 df %>% 
@@ -86,4 +104,8 @@ ggplot(aes(obs, pred)) +
   scale_y_continuous(labels = scales::comma) +
   theme_minimal()
 
+<<<<<<< Updated upstream
 mod_boosting$train.error
+=======
+mod_boosting$valid.error
+>>>>>>> Stashed changes
