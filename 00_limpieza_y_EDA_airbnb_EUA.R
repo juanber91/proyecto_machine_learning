@@ -5,14 +5,14 @@ library(magrittr)
 library(corrplot)
 
 # Cargamos datos y limpiamos ----------------------------------------------
-archivos <- list.files('datos/', pattern = 'csv', recursive = F)
+archivos <- list.files('datos/EUA/', pattern = 'csv', recursive = F)
 
 # archivos <- 'NY.csv'
 
-listings_raw <- map(archivos, ~fread(paste0('datos/', .),
-                                     colClasses = c('id' = 'text',
-                                                    'zipcode' = 'text'),
-                                     encoding = 'UTF-8')) %>% 
+listings_raw <- map_df(archivos, ~fread(paste0('datos/EUA/', .),
+                                        colClasses = c('id' = 'text',
+                                                       'zipcode' = 'text'),
+                                        encoding = 'UTF-8'), .id = 'file') %>% 
   bind_rows
 
 listings_raw %<>% 
@@ -20,7 +20,7 @@ listings_raw %<>%
             neighborhood_overview, notes,
             transit, access, interaction, house_rules, host_name,
             host_location, host_about,
-            host_neighbourhood, neighbourhood, neighbourhood_cleansed, city,
+            host_neighbourhood, neighbourhood, neighbourhood_cleansed, #city,
             state, 
             market:country_code, amenities, host_verifications,
             requires_license,
@@ -52,9 +52,9 @@ listing_mod <- listings_raw %>%
                 guests_included <= 4,
                 reviews_per_month <= 4,
                 cleaning_fee <= price,
-                price > 20, price <= 250) %>%
-                # price > 39, price <= 375) %>% 
-  select(id, country, price, review_scores_rating, room_type, property_type,
+                # price > 20, price <= 250) %>% 
+                price > 39, price <= 375) %>% 
+  select(id, file, price, review_scores_rating, room_type, property_type,
          accommodates, bathrooms, beds, guests_included, bed_type,
          reviews_per_month, cleaning_fee,
          bedrooms, latitude, longitude) %>% 
@@ -69,30 +69,19 @@ listing_mod <- listings_raw %>%
          latitude = round(as.numeric(as.character(latitude)), 2)) %>% 
   mutate_at(vars(bathrooms, beds, bedrooms, guests_included, cleaning_fee),
             funs(as.factor)) %>% 
-  mutate(longitude = abs(longitude))
+  mutate(longitude = abs(longitude)) %>% 
+  mutate_if(is.numeric, funs(log))
 
-listing_mod$price %>% quantile(c(0.4, 0.8, 1))
-# listing_mod$price %>% quantile(c(0.25, 0.5, 0.75, 1))
-# 
-# listing_mod %<>%
-#   mutate(price_gr = factor(ifelse(price < 60, 'low',
-#                            ifelse(price < 110, 'medium', 'high')),
-#                            levels = c('low', 'medium', 'high'))) %>%
+# listin_log <- listing_mod %>% 
 #   mutate_if(is.numeric, funs(log))
+# mutate(price_log = log(price))
 
-listing_mod %<>%
-  mutate(price_gr = factor(ifelse(price < 70, 0, 1))) %>%
-  mutate_if(is.numeric, funs(log)) %>% 
-  mutate(price_gr = as.numeric(as.character(price_gr)))
-
-listing_mod$price_gr
-
+# listing_mod$cleaning_fee %>% quantile(seq(0,1,0.01), na.rm = T) 
 
 listing_mod %>% summary
 
 
 # Entrenamiento y prueba --------------------------------------------------
-
 set.seed(124458)
 entrena <- sample_frac(listing_mod, 0.75)
 prueba <- listing_mod %>% dplyr::filter(!id %in% entrena$id) %>% select(-id)
