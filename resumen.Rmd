@@ -1,5 +1,5 @@
 ---
-title: "Propuesta"
+title: "Aprendizaje de máquina: proyecto final"
 author: "Elizabeth Viveros Vergara y Juan B. Martínez Parente"
 date: "24 de noviembre de 2018"
 output: html_document
@@ -9,15 +9,17 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## Propuesta de proyecto
+## Introducción
 
-Para el proyecto final de Aprendizaje de Máquina consideraremos dos bases de datos:
+El objetivo de este trabajo es probar distintos modelos de aprendizaje de máquina 
+con el fin de comparar resultados; además, consideraremos dos bases de datos de 
+interés:
 
-- Listado de propiedades en Airbnb para Berlín, París, Ámsterdam y Barcelona (descargadas en [Inside Airbnb](http://insideairbnb.com/get-the-data.html)) con variables descriptivas de cada propiedad (como número de cuartos, número de baños, ubicación, tamaño, etc.), además de inforamción de los _hosts_, _ratings_, entre otros.
+- Listado de propiedades en Airbnb para Berlín, París y Barcelona (descargadas en [Inside Airbnb](http://insideairbnb.com/get-the-data.html)) con variables descriptivas de cada propiedad (como número de cuartos, número de baños, ubicación, tamaño, etc.), además de inforamción de los _hosts_, _ratings_, entre otros. Tomaremos como
+variable dependiente el precio por noche de cada propiedad.
 
-- Información recopilada de fuentes del [Coneval](http://coneval.org.mx), [INEGI](http://sc.inegi.org.mx/cobdem/contenido.jsp?rf=false&solicitud=), [Conapo](http://www.conapo.gob.mx/es/CONAPO/Publicaciones) e [INAFED](http://www.inafed.gob.mx/en/inafed/Socioeconomico_Municipal) a nivel municipio provenientes de diferentes encuestas de 2010 y relacionadas con el índice de marginación (rubros de salud, educación, vivienda, seguridad, economía).
-
-Nuestro objetivo es probar varios modelos para predecir, en el primer caso, el precio por una noche en una propiedad de Airbnb con determinadas características, y, en el segundo caso, qué grado de marginación cuenta cada municipio. Esto con el fin de comparar el desempeño de distintas familias de modelos.
+- Información recopilada de fuentes del [Coneval](http://coneval.org.mx), [INEGI](http://sc.inegi.org.mx/cobdem/contenido.jsp?rf=false&solicitud=), [Conapo](http://www.conapo.gob.mx/es/CONAPO/Publicaciones) e [INAFED](http://www.inafed.gob.mx/en/inafed/Socioeconomico_Municipal) a nivel municipio provenientes de diferentes encuestas de 2010 y relacionadas con el índice de marginación (rubros de salud, educación, vivienda, seguridad, economía). La variable
+dependiente será el índice de marginación.
 
 Utilizaremos R y Python para programar los siguientes modelos:
 
@@ -25,7 +27,12 @@ Utilizaremos R y Python para programar los siguientes modelos:
 
 - redes neuronales,
 
-- bosques aleatorios,
+- _gradient boosting machines_,
 
 - árboles extremadamente aleatorizados (_extremely randomized trees_).
+
+
+## Exploración y limpieza de los datos
+
+###
 
