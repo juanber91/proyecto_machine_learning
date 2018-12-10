@@ -445,6 +445,22 @@ rmse_reg </code></pre>
 <pre class="r"><code>as_lin_reg &lt;- cor(df.reg$obs, df.reg$s0)^2
 as_lin_reg </code></pre>
 <pre><code>## [1] 0.5351157</code></pre>
+<pre class="r"><code>library(broom)
+tidy(mod_ridge) %&gt;% select(term, estimate)</code></pre>
+<pre><code>## # A tibble: 134 x 2
+##    term                           estimate
+##    &lt;chr&gt;                             &lt;dbl&gt;
+##  1 (Intercept)                      2.75  
+##  2 countryGermany                  -0.0928
+##  3 countrySpain                    -0.0813
+##  4 review_scores_rating             0.170 
+##  5 room_typePrivate/shared         -0.313 
+##  6 property_typeBed and breakfast   0.299 
+##  7 property_typeCondominium         0.0202
+##  8 property_typeHostel              0.129 
+##  9 property_typeHouse               0.0752
+## 10 property_typeLoft                0.155 
+## # ... with 124 more rows</code></pre>
 </div>
 </div>
 <div id="gradient-boosting" class="section level3">
@@ -679,7 +695,28 @@ conf_matrix_reg</code></pre>
 ##   5 Muy alto        0.0    0.0     1.6   17.2       81.1</code></pre>
 <pre class="r"><code>conf_matrix_reg %&lt;&gt;% 
   as.data.frame() %&gt;% 
-  setNames(c('obs', 'pred', 'freq_reg'))</code></pre>
+  setNames(c('obs', 'pred', 'freq_reg'))
+
+tidy(mod_ridge) %&gt;% select(class, term, estimate) %&gt;% spread(class, estimate)</code></pre>
+<pre><code>## # A tibble: 16 x 6
+##    term              `1 Muy bajo` `2 Bajo` `3 Medio` `4 Alto` `5 Muy alto`
+##    &lt;chr&gt;                    &lt;dbl&gt;    &lt;dbl&gt;     &lt;dbl&gt;    &lt;dbl&gt;        &lt;dbl&gt;
+##  1 &quot;&quot;                       8.08     2.77   -1.40      -4.08       -5.36  
+##  2 car_alimentacion         3.70    -0.408  -1.19      -1.69        0.0806
+##  3 car_espacios_viv~       -4.16    -2.55   -0.230      2.24        5.02  
+##  4 car_salud                5.31     2.07   -0.678     -2.10       -4.30  
+##  5 car_seguridad           -1.33     0.813   0.834     -1.22        0.623 
+##  6 car_servicios_vi~       -3.74    -1.53    1.09       1.95        2.05  
+##  7 inf_bienestar            0.119   -0.229  -0.529      1.03       -0.0914
+##  8 inf_bienestar_min       -4.86    -4.05   -1.29       4.42        6.06  
+##  9 mort_infantil           -6.53    -1.49   -0.627      2.07        7.34  
+## 10 PIB_per_capita          -8.68     2.79    4.66       3.47       -3.17  
+## 11 pob_desocupada          24.5     16.5    NA        -15.4       -22.4   
+## 12 pobreza                 -3.52    -1.48    2.38       2.11        0.230 
+## 13 pobreza_extrema         -3.70    -5.01    0.167      3.27        4.99  
+## 14 pobreza_moderada        -0.326    7.22    5.60      -1.50      -10.6   
+## 15 rezago_edu             -11.1     -8.38    0.00128    6.66       12.3   
+## 16 sin_acceso_salud        -3.09    -0.149   0.734      0.778       1.43</code></pre>
 </div>
 </div>
 <div id="gradient-boosting-1" class="section level3">

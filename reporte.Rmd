@@ -337,6 +337,9 @@ rmse_reg
 
 as_lin_reg <- cor(df.reg$obs, df.reg$s0)^2
 as_lin_reg 
+
+library(broom)
+tidy(mod_ridge) %>% select(term, estimate)
 ```
 
 ### _Gradient boosting_
@@ -586,6 +589,8 @@ conf_matrix_reg
 conf_matrix_reg %<>% 
   as.data.frame() %>% 
   setNames(c('obs', 'pred', 'freq_reg'))
+
+tidy(mod_ridge) %>% select(class, term, estimate) %>% spread(class, estimate)
 ```
 
 ### _Gradient boosting_
