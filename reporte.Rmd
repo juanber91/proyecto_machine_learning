@@ -1,0 +1,729 @@
+---
+title: "Aprendizaje de máquina: proyecto final"
+author: "Elizabeth Viveros Vergara y Juan B. Martínez Parente"
+date: "24 de noviembre de 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(java.parameters = "-Xmx8g")
+```
+
+## Introducción
+
+El objetivo de este trabajo es probar distintos modelos de aprendizaje de máquina 
+con el fin de comparar resultados; además, consideraremos dos bases de datos de 
+interés:
+
+- Listado de propiedades en Airbnb para Berlín, París, Roma y Barcelona (descargadas en [Inside Airbnb](http://insideairbnb.com/get-the-data.html)) con variables descriptivas de cada propiedad (como número de cuartos, número de baños, ubicación, tamaño, etc.), además de inforamción de los _hosts_, _ratings_, entre otros. Tomaremos como
+variable dependiente el precio por noche de cada propiedad (problema de regresión).
+
+- Información recopilada de fuentes del [Coneval](http://coneval.org.mx), [INEGI](http://sc.inegi.org.mx/cobdem/contenido.jsp?rf=false&solicitud=), [Conapo](http://www.conapo.gob.mx/es/CONAPO/Publicaciones) e [INAFED](http://www.inafed.gob.mx/en/inafed/Socioeconomico_Municipal) a nivel municipio provenientes de diferentes encuestas de 2010 y relacionadas con el índice de marginación (rubros de salud, educación, vivienda, seguridad, economía). La variable
+dependiente será el grado de marginación como lo determina la CONAPO (problema de claseificación).
+
+Utilizaremos R y Python para programar los siguientes modelos:
+
+- regresión lineal con regularización,
+
+- _gradient boosting_
+
+- árboles extremadamente aleatorizados (_extremely randomized trees_).
+
+
+## Limpieza y exploración de los datos
+
+### Airbnb
+
+Las bases en crudo de cada ciudad contienen las mismas variables. Se unieron todas las bases en una sola "base maestra" y se eliminaron 
+
+a) las variables con una proporción muy alta de valores nulos (como `square_feet`);
+
+b) las variables categóricas con muchos niveles (en general, más de 30), como `neighbourhood_cleansed`, `neighborhood_overview`, `street`, `jurisdiction_names`, entre otras;
+
+c) las variables de texto (`name`, `sumary`, `notes`, `host_name`, `host_about`, etc.;
+
+ya que no están realmente relacionadas con el precio por una noche en las distintas propiedades. Algunas de ellas podrían resultar interesantes en otros tipo de anális (por ejemplo, _text mining_).
+
+De las variables restantes, se tomaron las siguientes:
+
+- `id` de la propiedad
+
+- `country`
+
+- `price`: precio por una noche (se filtró para propiedades de entre 25 y 200 euros),
+
+- `review_scores_rating` evaluación promedio de los usuarios por cada propiedad (escala continua de 0 a 10),
+
+- `room_type`: variable categórica que fue modificada para tomar los valores `Entire home/apt`, `Private/shared`,
+
+- `property_type`: varaible categórica que fue filtrada para los valores `Hostel`, `Bed and breakfast`, `Loft`, `Condominium`, `House` y `Apartment` (los demás niveles ocurrían un número muy pequeño de veces, y algunos de ellos eran porpiedades "atípicas", como castillos o barcos),
+
+- `accommodates`: máximo número de personas que podrían caber en la propiedad` (se filtró para porpiedades de hasta 6 personas),
+
+- `guests_included`: número de personas que incluye el precio (igual o menor a `accommodates` (se filtró para porpiedades de hasta 4 personas),
+
+- `bathrooms`: número de baños (se filtró para propiedades de hasta 3 baños),
+
+- `bedrooms`: número de habitaciones (se filtró para propiedades de hasta 3 habitaciones),
+
+- `beds`: número de camas (se filtró para propiedades de hasta 4 camas),
+
+- `bed_type`: tipo de cama (individual, compartida o sofá),
+
+- `reviews_per_month`: número pomedio de reseñas por mes (se filtró para propiedades de hasta 4 reseñas por mes),
+
+- `cleaning_fee`: variable binaria que vale 1 si el _host_ cobra una tarifa de limpieza y 0 en otro caso,
+
+- `security_deposit`: variable binaria que vale 1 si el _host_ cobra un depósito de seguridad y 0 en otro caso,
+
+- `latitude` y `longitude`: se redondearon para tener una precisión de aproximadamentre 1 kilómetro.
+
+Cabe notar que las variables fueron filtradas para evitar que tomaran valores atípicos tanto hacia arriba como hacia abajo (en general, se tomaron por arriba del cuantil 0.05 y por debajo del cuantil 0.95).
+
+```{r}
+library(tidyverse)
+library(magrittr)
+library(data.table)
+
+archivos <- list.files('datos/airbnb/', pattern = 'csv', recursive = F)
+
+listings_raw <- map(archivos, ~fread(paste0('datos/airbnb/', .),
+                                     colClasses = c('id' = 'text',
+                                                    'zipcode' = 'text'),
+                                     encoding = 'UTF-8')) %>% 
+  bind_rows()
+
+listings_raw %<>% 
+  select(-c(contains('url'), description, scrape_id, name, summary, space, 
+            neighborhood_overview, notes,
+            transit, access, interaction, house_rules, host_name,
+            host_location, host_about,
+            host_neighbourhood, neighbourhood, neighbourhood_cleansed, city,
+            state,  weekly_price, monthly_price, host_response_rate,
+            market:country_code, amenities, host_verifications,
+            requires_license,
+            host_acceptance_rate, host_listings_count, square_feet,
+            jurisdiction_names, last_scraped, host_has_profile_pic,
+            street, neighbourhood_group_cleansed, license, calendar_updated,
+            host_since, calendar_last_scraped, first_review, last_review,
+            experiences_offered, has_availability,
+            is_business_travel_ready)) %>% 
+  filter(property_type %in% c('Hostel', 'Bed and breakfast', 'Loft',
+                              'Condominium', 'House', 'Apartment')) %>% 
+  mutate_at(vars(contains('price'), security_deposit, cleaning_fee,
+                 extra_people),
+            funs(parse_number)) %>% 
+  # mutate(zipcode = as.numeric(zipcode)) %>% 
+  mutate_at(vars(id, review_scores_rating, accommodates, bathrooms, bedrooms,
+                 beds, guests_included, reviews_per_month), 
+            funs(as.numeric)) %>% 
+  dplyr::filter(!country %in% c('Vatican City', 'Switzerland')) 
+
+listing_mod <- listings_raw %>% 
+  dplyr::filter(property_type %in% c('Hostel', 'Bed and breakfast', 'Loft',
+                                     'Condominium', 'House', 'Apartment'),
+                accommodates <= 6,
+                beds > 0, beds <= 4,
+                bedrooms > 0, bedrooms <= 3,
+                bathrooms > 0, bathrooms <= 2,
+                guests_included <= 4,
+                reviews_per_month <= 4,
+                price > 25, price <= 200) %>%
+  select(id, country, price, review_scores_rating, room_type, property_type,
+         accommodates, bathrooms, beds, guests_included, bed_type,
+         reviews_per_month, cleaning_fee, security_deposit, zipcode,
+         bedrooms, latitude, longitude) %>% 
+  mutate(cleaning_fee = ifelse(is.na(cleaning_fee)|cleaning_fee == 0, '0', '1'),
+         security_deposit = ifelse(is.na(security_deposit)|security_deposit == 0, '0', '1'),
+         bed_type = ifelse(bed_type != 'Real Bed', 'Other', bed_type),
+         room_type = ifelse(room_type != 'Entire home/apt', 'Private/shared',
+                            room_type)) %>% 
+  na.omit() %>% 
+  mutate_if(is.character, funs(as.factor)) %>% 
+  mutate(longitude = round(as.numeric(as.character(longitude)), 2),
+         latitude = round(as.numeric(as.character(latitude)), 2)) %>% 
+  mutate_at(vars(bathrooms, beds, zipcode, bedrooms, guests_included, cleaning_fee),
+            funs(as.factor)) %>% 
+  group_by(zipcode) %>%
+  filter(n() >= 100, zipcode != '') %>% 
+  ungroup()
+```
+
+Adicionalmente, se calcularon los cuantiles 0.3 y 0.7 de la variable `price` para agruparla en la variable `price_gr`: `low` si el precio es menor a 50 euros, `medium` si está entre 50 y 90 euros, y `high` si está por arriba de los 90 euros. Más adelante se verá el motivo por el que se hizo esta agrupación.
+
+```{r}
+listing_mod$price %>% quantile(c(0.3, 0.7, 1))
+
+
+listing_mod %<>%
+  mutate(price_gr = factor(ifelse(price < 50, 'low',
+                           ifelse(price < 90, 'medium', 'high')),
+                           levels = c('low', 'medium', 'high'))) %>%
+  mutate_if(is.numeric, funs(log))
+```
+
+Finalmente, separamos la muestra en entrenamiento y prueba (70% y 30%, respectivamente):
+
+```{r}
+set.seed(124458)
+entrena <- sample_frac(listing_mod, 0.7)
+prueba <- listing_mod %>% dplyr::filter(!id %in% entrena$id) %>% select(-id)
+entrena %<>% select(-id)
+
+save(entrena, prueba, file = 'datos/bases_airbnb.RData')
+```
+
+#### Exploratorio
+Se hizo un breve análisis exploratorio de las variables seleccionadas. Se observa que el precio alcanza distintos niveles según los valores de las diferentes variables:
+
+
+```{r}
+###### Incluir exploratorio
+```
+
+### Grado de marginación
+Se creo la base de datos del Índice de marginación de 2010 a nivel municipal a partir de las fuentes mencionadas arriba (INEGI, CONAPO, INAFED y Coneval) y se eligieron las variables que a continuación se mencionan para predecir el grado de marginación (muy bajo, bajo, medio, alto y muy alto), es decir, tratándose de un problema de clasificación:
+
+- PIB per cápita
+- Proporción de la población que vive en pobreza 
+- Proporción de la población que vive en pobreza extrema 
+- Proporción de la población que vive en pobreza moderada 
+- Proporción de la población con ingreso inferior a la línea de bienestar 
+- Proporción de la población con ingreso inferior a la línea de bienestar mínimo 
+- Proporción de la población con rezago educativo 
+- Proporción de la población sin acceso a los servicios básicos en la vivienda 
+- Proporción de la población con carencia por acceso a la alimentación 
+- Proporción de la población sin acceso a la seguridad social 
+- Proporción de la población sin acceso a los servicios de salud 
+- Proporción de la población con carencia por calidad y espacios de la vivienda 
+- Proporción de la población de 15 años o más analfabeta 
+- Proporción de la población en viviendas sin drenaje ni excusado 
+- Proporción de la población en viviendas sin energía eléctrica 
+- Proporción de la población en viviendas sin agua entubada 
+- Proporción de la población en viviendas con piso de tierra 
+- Tasa de mortalidad infantil 
+- Proporción de la población sin derechohabiencia
+- Proporción de la población desocupada de 12 años y más
+
+```{r}
+IM <- fread('datos/bae_IM.csv', encoding = 'UTF-8') %>% 
+  select(-predicted) %>% 
+  mutate(id = 1:nrow(.))
+
+IM %>% names
+
+names(IM) <- c(
+  'grado_IM',
+  'indices_IM',
+  'PIB_per_capita',
+  'pobreza',
+  'pobreza_extrema',
+  'pobreza_moderada',
+  'inf_bienestar',
+  'inf_bienestar_min',
+  'rezago_edu',
+  'car_servicios_vivienda',
+  'car_alimentacion',
+  'car_seguridad',
+  'car_salud',
+  'car_espacios_vivienda',
+  'mort_infantil',
+  'sin_acceso_salud',
+  'pob_desocupada',
+  'id'
+)
+
+IM <- IM %>% 
+  mutate(grado_IM = ifelse(grado_IM == 0, '1 Muy bajo',
+                           ifelse(grado_IM == 1, '2 Bajo',
+                                  ifelse(grado_IM == 2, '3 Medio',
+                                         ifelse(grado_IM == 3, '4 Alto', '5 Muy alto'))))) %>% 
+  mutate(grado_IM = factor(grado_IM))
+
+
+set.seed(10585)
+entrena <- sample_frac(IM, 0.7)
+prueba <- IM %>% dplyr::filter(!id %in% entrena$id) %>% select(-id)
+entrena %<>% select(-id)
+
+x <- model.matrix(~., entrena[,-c(1, 2)])
+x %>% dim
+y <- as.factor(entrena$grado_IM)
+y %>% length
+
+x.test <- model.matrix(~., prueba[,-c(1,2)])
+x.test %>% dim
+y.test <- as.factor(prueba$grado_IM)
+y.test %>% length
+
+save(entrena, prueba, x, y, x.test, y.test, file = 'datos/bases_indice.RData')
+```
+
+
+#### Exploratorio
+
+El análisis exploratorio está en el anexo 'EDA_mariginacion.Md'.
+
+## Modelos
+
+Como se mecionó anteriormente, el objetivo del actual proyecto es comparar el desempeño de tres distintos tipos de modelos (regresión con regularización, _gradient boosting_ y extremely randomized trees_. A continuación presentamos los resultados para cada base de datos.
+
+En todos los casos se hizo validación cruzada con la librería `caret` para elegir los parámetros que minimizan el error cuadrático medio (en el caso de regresión) y los que maximizan la precisión (en el caso de clasificación). Los parámetros de la validación cruzada fueron:
+
+```{r, eval=FALSE}
+library(caret)
+
+fitControl <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 10)
+```
+
+### Airbnb
+
+#### Regresión lineal con regularización Ridge y Lasso
+
+Primero se hizo la validación cruzada para $\alpha \in \{ 0, 0.05, 0.1, \dots, 0.95, 1 \}$ y para $\lambda \in \{ e^{-5}, e^{-4}, \dots, e^4, e^5\}$. 
+
+```{r, message=FALSE}
+library(glmnet)
+x <- model.matrix(~., entrena[,-c(2,18)])
+y <- entrena$price
+
+# test_class_cv_model <- train(x, y,
+#                             method = "glmnet",
+#                             trControl = fitControl 
+#                             metric = "RMSE",
+#                             tuneGrid = expand.grid(.alpha = seq(0, 1, 0.05),
+#                                                    .lambda = exp(seq(-5,5,1))))
+
+load('crossval/cv_reg_airbnb.RData')
+
+test_class_cv_model$bestTune
+```
+
+Los valores que resultaron ótpimos para el error cuadrático medio fueron $\alpha = 0.05$ y $\lambda = e^{-5}$. Corremos entonces el modelo y calculamos, para el conjunto de prueba, el error cuadrático medio y la asociación lineal (la correlación entre los valores observados y los valores predichos):
+
+```{r}
+load('datos/bases_airbnb.RData')
+
+x <- model.matrix(~., entrena[,-c(2,18)])
+y <- entrena$price
+
+mod_ridge <- glmnet(x, y, 
+                    alpha = 0.05,
+                    family = 'gaussian', 
+                    intercept = T, 
+                    lambda = 0.006737947)
+
+x.test <- model.matrix(~., prueba[,-c(2, 18)])
+y.test <- prueba$price
+
+df.reg <- data.frame(pred = predict(mod_ridge, x.test),
+                     obs = prueba$price,
+                     pred.exp = exp(predict(mod_ridge, x.test)), 
+                     obs.exp = exp(prueba$price),
+                     country = prueba$country) %>% 
+  mutate(residuo = obs - s0)
+
+rmse_reg <- sqrt(sum((df.reg$obs.exp - df.reg$s0.1)^2) / nrow(df.reg))
+rmse_reg 
+
+as_lin_reg <- cor(df.reg$obs, df.reg$s0)^2
+as_lin_reg 
+```
+
+### _Gradient boosting_
+Hicimos validación cruzada para los parámetros `interaction.depth` en el conjunto $\{1,2,3\}$, `n.trees` en el conjunto $\{50,100,150\}$. `shrinkage` y `n.minobsinnode` se tomaron constantes con los valores respectivos de $0.1$ y $10$.
+
+```{r}
+library(gbm)
+
+#gbmFit1 <- train(price ~ ., data = entrena,
+#                 method = "gbm",
+#                 trControl = fitControl,
+#                 verbose = FALSE)
+
+load('crossval/cv_gbm_airbnb.RData')
+
+gbmFit1$bestTune
+```
+
+Los valores que resultaron ótpimos para el error cuadrático medio fueron `interaction.depth = 3` y `n.trees = 150`. Corremos entonces el modelo y calculamos, para el conjunto de prueba, el error cuadrático medio y la asociación lineal (la correlación entre los valores observados y los valores predichos):
+
+```{r}
+mod_boosting <- gbm(price ~ .,
+                    data = entrena %>% select(-c(price_gr)),
+                    n.trees = 500, 
+                    interaction.depth = 3,
+                    shrinkage = 0.1, # tasa de aprendizaje
+                    n.minobsinnode = 10,
+                    bag.fraction = 1,
+                    train.fraction = 0.75)
+
+df.gbm <- data.frame(pred = predict(mod_boosting, prueba), 
+                     obs = prueba$price,
+                     country = prueba$country) %>% 
+  mutate(pred.exp = exp(pred),
+         obs.exp = exp(obs)) %>% 
+  mutate(residuo = obs - pred)
+
+rmse_gbm <- sqrt(sum((df.gbm$obs.exp - df.gbm$pred.exp)^2) / nrow(df.gbm))
+rmse_gbm
+
+as_lin_gbm <- cor(df.gbm$obs, df.gbm$pred)^2
+as_lin_gbm 
+```
+
+### _Extremely randomized trees_
+Hicimos validación cruzada para los parámetros `mtry` en el conjunto $\{4,9,16\}$, `numRandomCuts` en el conjunto $\{1,2,3\}$.
+
+```{r}
+library(extraTrees)
+
+# gbmFit2 <- train(x, y,
+#                 method = "extraTrees",
+#                 trControl = fitControl)
+
+
+load('crossval/cv_ET_airbnb.RData')
+
+gbmFit2$bestTune
+```
+
+Los valores que resultaron ótpimos para el error cuadrático medio fueron `mtry = xxx` y `numRandomCuts = yyy`. Corremos entonces el modelo y calculamos, para el conjunto de prueba, el error cuadrático medio y la asociación lineal (la correlación entre los valores observados y los valores predichos):
+
+```{r}
+# load('datos/mod_ET.RData')
+
+mod_ET <- extraTrees(x, y, mtry = 5, numRandomCuts = 18)
+
+df.ET <- data.frame(pred = predict(mod_ET, x.test), 
+                 obs = prueba$price,
+                 country = prueba$country) %>% 
+  mutate(pred.exp = exp(pred),
+         obs.exp = exp(obs)) %>% 
+  mutate(residuo = obs - pred)
+
+rmse_ET <- sqrt(sum((df.ET$obs.exp - df.ET$pred.exp)^2) / nrow(df.ET))
+rmse_ET 
+
+as_lin_ET <- cor(df.ET$obs, df.ET$pred)^2
+as_lin_ET 
+```
+
+### Comparación de los resultados
+
+```{r}
+rmse_df <- data.frame(modelo = c('regularizacion', 'gbm', 'extra_trees'),
+                      rmse = c(rmse_reg, rmse_gbm, rmse_ET),
+                      asociacion_lineal = c(as_lin_reg, as_lin_gbm, as_lin_ET))
+rmse_df
+```
+
+```{r, fig.height=20, fig.width=20, message=FALSE}
+library(Rmisc)
+
+ajuste_reg <- df.reg %>% 
+  ggplot(aes(obs, s0)) +
+  geom_jitter(aes(color = country), size = 0.5, width = 0.25) +
+  geom_abline() +
+  coord_equal() +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Observados vs. ajustados (log) (regresión)')
+
+ajuste_reg_exp <- df.reg %>% 
+  ggplot(aes(obs.exp, s0.1)) +
+  geom_jitter(aes(color = country), size = 0.5, width = 1) +
+  geom_abline() +
+  coord_equal() +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Observados vs. ajustados (regresión)')
+
+residuales_reg <- df.reg %>% 
+  ggplot(aes(residuo)) +
+  geom_density(color = 'red', size = 1, fill = 'red', alpha = 0.2) +
+  geom_histogram(aes(y = ..density..), fill = 'royal blue', alpha = 0.75) +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Residuales (regresión)')
+
+ajuste_gbm <- df.gbm %>% 
+  ggplot(aes(obs, pred)) +
+  geom_jitter(aes(color = country), size = 0.5, width = 0.25) +
+  geom_abline() +
+  coord_equal() +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Observados vs. ajustados (log) (gbm)')
+
+ajuste_gbm_exp <- df.gbm %>% 
+  ggplot(aes(obs.exp, pred.exp)) +
+  geom_jitter(aes(color = country), size = 0.5, width = 1) +
+  geom_abline() +
+  coord_equal() +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Observados vs. ajustados (gbm)')
+
+residuales_gbm <- df.gbm %>% 
+  ggplot(aes(residuo)) +
+  geom_density(color = 'red', size = 1, fill = 'red', alpha = 0.2) +
+  geom_histogram(aes(y = ..density..), fill = 'royal blue', alpha = 0.75) +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Residuales (gbm)')
+
+ajuste_ET <- df.ET %>% 
+  ggplot(aes(obs, pred)) +
+  geom_jitter(aes(color = country), size = 0.5, width = 0.25) +
+  geom_abline() +
+  coord_equal() +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Observados vs. ajustados (log) (extraTrees)')
+
+ajuste_ET_exp <- df.ET %>% 
+  ggplot(aes(obs.exp, pred.exp)) +
+  geom_jitter(aes(color = country), size = 0.5, width = 1) +
+  geom_abline() +
+  coord_equal() +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Observados vs. ajustados (extraTrees)')
+
+residuales_ET <- df.ET %>% 
+  ggplot(aes(residuo)) +
+  geom_density(color = 'red', size = 1, fill = 'red', alpha = 0.2) +
+  geom_histogram(aes(y = ..density..), fill = 'royal blue', alpha = 0.75) +
+  theme_minimal() +
+  theme(legend.position = 'bottom') +
+  labs(title = 'Residuales (extraTrees)')
+
+multiplot(ajuste_reg, ajuste_reg_exp, residuales_reg,
+          ajuste_gbm, ajuste_gbm_exp, residuales_gbm,
+          ajuste_ET, ajuste_ET_exp, residuales_ET,
+          cols = 3)
+```
+
+En general, los tres modelos se comportan de forma muy similar. El error
+cuadrático medio es muy cercano en cada caso (alrededor de 26 euros), y el
+ajuste lineal es bastante malo (entre 0.53 y 0.57). Sin emabrgo, si hubiera que 
+elegir un modelo, la mejor elección sería el de _gradient boosting_.
+
+La calidad del ajuste no se debe a algún problema en los modelos seleccionados, 
+sino a los datos. No tiene sentido incorporar las variables que en un inicio
+se quitaron de la base, ya que, como se vio, no guardan relación con el precio. 
+Valdría la pena, en un segundo ejercicio, buscar fuentes de información ajenas a
+Airbnb que complementen los datos y ayuden a mejorar el ajuste (quizá exista 
+información sobre la edad promedio de los edificios por zona en las ciudades que
+tomamos o alguna variable similar).
+
+
+### Grado de marginación
+#### Regresión lineal con regularización Ridge y Lasso
+
+La validación cruzada arrojó los siguientes valores óptimos para el error cuadrático medio: $\alpha = 0.05$ y $\lambda = e^{-5}$. 
+
+```{r}
+library(glmnet)
+x <- model.matrix(~., entrena[,-c(2,18)])
+y <- entrena$price
+
+# test_class_cv_model <- train(x, y,
+#                             method = "glmnet",
+#                             trControl = cctrlR,
+#                             tuneGrid = expand.grid(.alpha = seq(0, 1, 0.05),
+#                                                    .lambda = exp(seq(-5,5,1))))
+
+load('crossval/cv_reg_indice.RData')
+
+test_class_cv_model$bestTune
+```
+
+Corremos entonces el modelo y calculamos, para el conjunto de prueba, el error cuadrático medio y la asociación lineal (la correlación entre los valores observados y los valores predichos):
+
+```{r}
+load('datos/bases_indice.RData')
+
+mod_ridge <- glmnet(x, y, 
+                    family = 'multinomial', 
+                    alpha = 0.05,
+                    intercept = T, 
+                    lambda = 0.006737947)
+
+df.reg <- data.frame(pred = predict(mod_ridge, x.test, type = 'response')) %>% 
+  mutate(num = apply(., 1, which.max),
+         # num = as.numeric(num),
+         obs = y.test) %>% 
+  mutate(pred = ifelse(num == 1, '1 Muy bajo',
+                       ifelse(num == 2, '2 Bajo',
+                              ifelse(num == 3, '3 Medio',
+                                     ifelse(num == 4, '4 Alto', '5 Muy alto'))))) 
+
+acc_reg <- round(100 * sum(df.reg$obs == df.reg$pred) / nrow(df.reg), 1)
+acc_reg
+
+conf_matrix_reg <- round(100 * prop.table(table(df.reg$obs, df.reg$pred), margin = 1), 1)
+diag_reg <- diag(conf_matrix_reg)
+
+conf_matrix_reg
+
+conf_matrix_reg %<>% 
+  as.data.frame() %>% 
+  setNames(c('obs', 'pred', 'freq_reg'))
+```
+
+### _Gradient boosting_
+
+Se usaron los mismos valores para la validación cruzada que para la base de Airbnb. De igual forma, los valores que resultaron ótpimos para el error cuadrático medio fueron `interaction.depth = 3` y `n.trees = 150`. 
+
+```{r}
+# gbmFit1 <- train(as.factor(grado_IM) ~ ., data = entrena %>% select(-indices_IM),
+#                 method = "gbm",
+#                 trControl = fitControl,
+#                 verbose = FALSE)
+
+load('crossval/cv_gbm_indice.RData')
+
+gbmFit1$bestTune
+```
+
+Corremos entonces el modelo y calculamos, para el conjunto de prueba, el error cuadrático medio y la asociación lineal (la correlación entre los valores observados y los valores predichos):
+
+```{r}
+mod_boosting <- gbm(factor(grado_IM) ~ .,
+                    data = entrena %>% select(-indices_IM),
+                    n.trees = 150,
+                    interaction.depth = 3,
+                    shrinkage = 0.1,
+                    n.minobsinnode = 10,
+                    bag.fraction = 1,
+                    train.fraction = 0.75)
+
+df.gbm <- data.frame(pred = predict(mod_boosting, prueba %>% mutate(grado_IM = factor(grado_IM)),
+                                    type = 'response')) %>% 
+  mutate(num = apply(., 1, which.max),
+         obs = as.character(prueba$grado_IM)) %>% 
+  mutate(pred = ifelse(num == 1, '1 Muy bajo',
+                       ifelse(num == 2, '2 Bajo',
+                              ifelse(num == 3, '3 Medio',
+                                     ifelse(num == 4, '4 Alto', '5 Muy alto')))))
+
+acc_gbm <- round(100 * sum(df.gbm$obs == df.gbm$pred) / nrow(df.gbm), 1)
+acc_gbm
+
+conf_matrix_gbm <- round(100 * prop.table(table(df.gbm$obs, df.gbm$pred), margin = 1), 1)
+
+diag_gbm <- diag(conf_matrix_gbm)
+conf_matrix_gbm
+
+conf_matrix_gbm %<>% 
+  as.data.frame() %>% 
+  setNames(c('obs', 'pred', 'freq_gbm'))
+
+
+```
+
+### _Extremely randomized trees_
+Hicimos validación cruzada para los parámetros `mtry = 2` en el conjunto $\{4,9,16\}$, `numRandomCuts = 3` en el conjunto $\{1,2,3\}$.
+
+```{r}
+
+# gbmFit1 <- train(x, y,
+#                 method = "extraTrees",
+#                 trControl = fitControl)
+
+load('crossval/cv_ET_indice.RData')
+
+gbmFit1$bestTune
+```
+
+Los valores que resultaron ótpimos para el error cuadrático medio fueron `mtry = 2` y `numRandomCuts = 3`. Corremos entonces el modelo y calculamos, para el conjunto de prueba, el error cuadrático medio y la asociación lineal (la correlación entre los valores observados y los valores predichos):
+
+```{r}
+mod_ET <- extraTrees(x, y, ntree = 1000, mtry = 2, numRandomCuts = 3)
+
+df.ET <- data.frame(pred = predict(mod_ET, x.test),
+                    obs = prueba$grado_IM)
+
+acc_ET <- round(100 * sum(df.ET$obs == df.ET$pred) / nrow(df.ET), 1)
+acc_ET
+
+conf_matrix_ET <- round(100 * prop.table(table(df.ET$obs, df.ET$pred), margin = 1), 1)
+
+diag_ET <- diag(conf_matrix_ET)
+conf_matrix_ET
+
+conf_matrix_ET %<>% 
+  as.data.frame() %>% 
+  setNames(c('obs', 'pred', 'freq_ET'))
+
+
+```
+
+### Comparación de los resultados
+
+```{r, fig.height=25, fig.width=10}
+conf_reg <- conf_matrix_reg %>% 
+  ggplot(aes(pred, obs)) +
+  geom_tile(aes(fill = freq_reg)) +
+  geom_text(aes(pred, obs, label = freq_reg)) +
+  scale_fill_continuous(low = 'white', high = 'dark green',
+                        limits = c(0,100)) +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(title = 'Mastriz de confusión (regresión)')
+
+conf_gbm <- conf_matrix_gbm %>% 
+  ggplot(aes(pred, obs)) +
+  geom_tile(aes(fill = freq_gbm)) +
+  geom_text(aes(pred, obs, label = freq_gbm)) +
+  scale_fill_continuous(low = 'white', high = 'dark green',
+                        limits = c(0,100)) +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(title = 'Mastriz de confusión (gbm)')
+
+conf_ET <- conf_matrix_ET %>% 
+  ggplot(aes(pred, obs)) +
+  geom_tile(aes(fill = freq_ET)) +
+  geom_text(aes(pred, obs, label = freq_ET)) +
+  scale_fill_continuous(low = 'white', high = 'dark green',
+                        limits = c(0,100)) +
+  theme_minimal() +
+  theme(legend.position = 'none') +
+  labs(title = 'Mastriz de confusión (extraTrees)')
+
+acc_df <- data.frame(modelo = c('regularizacion', 'gbm', 'extra_trees'),
+		     accuracy = c(acc_reg, acc_gbm, acc_ET))
+
+acc_df
+
+conf_matrices <- data.frame(reg = diag_reg,
+                            gbm = diag_gbm,
+                            ET = diag_ET)
+
+conf_matrices
+
+multiplot(conf_reg, conf_gbm, conf_ET)
+```
+
+Como ocurrió con los datos de Airbnb, el desempeño de los tres modelos es 
+similar. La precisión está alrededor del 75%, siendo la mejor la de 
+_extremely randomized trees_.
+
+Si se observa los valores de las diagonales de las matrices confusión, vemos que
+_extremely randomized trees_ no es el mejor prediciendo en todos los niveles del índice de marginación. La regresión con regularización es la que mjor predice el
+nivel de marginación medio, _gradient boosting_ predice mejor los niveles alto y
+muy alto, y _extremely randomized trees_ es el mejor prediciendo los niveles muy
+bajo y bajo.
