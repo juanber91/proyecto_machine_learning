@@ -22,7 +22,7 @@ variable dependiente el precio por noche de cada propiedad (problema de regresi�
 - Información recopilada de fuentes del [Coneval](http://coneval.org.mx), [INEGI](http://sc.inegi.org.mx/cobdem/contenido.jsp?rf=false&solicitud=), [Conapo](http://www.conapo.gob.mx/es/CONAPO/Publicaciones) e [INAFED](http://www.inafed.gob.mx/en/inafed/Socioeconomico_Municipal) a nivel municipio provenientes de diferentes encuestas de 2010 y relacionadas con el índice de marginación (rubros de salud, educación, vivienda, seguridad, economía). La variable
 dependiente será el grado de marginación como lo determina la CONAPO (problema de claseificación).
 
-Utilizaremos R y Python para programar los siguientes modelos:
+Utilizaremos R para programar los siguientes modelos:
 
 - regresión lineal con regularización,
 
@@ -81,7 +81,7 @@ De las variables restantes, se tomaron las siguientes:
 
 Cabe notar que las variables fueron filtradas para evitar que tomaran valores atípicos tanto hacia arriba como hacia abajo (en general, se tomaron por arriba del cuantil 0.05 y por debajo del cuantil 0.95).
 
-```{r}
+```{r, message=FALSE}
 library(tidyverse)
 library(magrittr)
 library(data.table)
@@ -143,7 +143,7 @@ listing_mod <- listings_raw %>%
   mutate_if(is.character, funs(as.factor)) %>% 
   mutate(longitude = round(as.numeric(as.character(longitude)), 2),
          latitude = round(as.numeric(as.character(latitude)), 2)) %>% 
-  mutate_at(vars(bathrooms, beds, zipcode, bedrooms, guests_included, cleaning_fee),
+  mutate_at(vars(accommodates, bathrooms, beds, zipcode, bedrooms, guests_included, cleaning_fee),
             funs(as.factor)) %>% 
   group_by(zipcode) %>%
   filter(n() >= 100, zipcode != '') %>% 
@@ -172,14 +172,23 @@ prueba <- listing_mod %>% dplyr::filter(!id %in% entrena$id) %>% select(-id)
 entrena %<>% select(-id)
 
 save(entrena, prueba, file = 'datos/bases_airbnb.RData')
+
+entrena 
 ```
 
 #### Exploratorio
 Se hizo un breve análisis exploratorio de las variables seleccionadas. Se observa que el precio alcanza distintos niveles según los valores de las diferentes variables:
 
 
-```{r}
-###### Incluir exploratorio
+```{r, fig.width=8, fig.height=12}
+listing_mod %>% 
+  gather(var, val, c(country, room_type:bed_type, cleaning_fee, 
+                     security_deposit, bedrooms)) %>%
+  ggplot(aes(val, price)) +
+  facet_wrap(~var, scales = 'free_x', ncol = 3) +
+  geom_boxplot(aes(fill = var)) +
+  theme_minimal() +
+  theme(legend.position = 'none')
 ```
 
 ### Grado de marginación
@@ -248,14 +257,10 @@ prueba <- IM %>% dplyr::filter(!id %in% entrena$id) %>% select(-id)
 entrena %<>% select(-id)
 
 x <- model.matrix(~., entrena[,-c(1, 2)])
-x %>% dim
 y <- as.factor(entrena$grado_IM)
-y %>% length
 
 x.test <- model.matrix(~., prueba[,-c(1,2)])
-x.test %>% dim
 y.test <- as.factor(prueba$grado_IM)
-y.test %>% length
 
 save(entrena, prueba, x, y, x.test, y.test, file = 'datos/bases_indice.RData')
 ```
@@ -673,7 +678,7 @@ conf_matrix_ET %<>%
 
 ### Comparación de los resultados
 
-```{r, fig.height=25, fig.width=10}
+```{r, fig.height=12, fig.width=4}
 conf_reg <- conf_matrix_reg %>% 
   ggplot(aes(pred, obs)) +
   geom_tile(aes(fill = freq_reg)) +
@@ -682,7 +687,7 @@ conf_reg <- conf_matrix_reg %>%
                         limits = c(0,100)) +
   theme_minimal() +
   theme(legend.position = 'none') +
-  labs(title = 'Mastriz de confusión (regresión)')
+  labs(title = 'Matriz de confusión (regresión)')
 
 conf_gbm <- conf_matrix_gbm %>% 
   ggplot(aes(pred, obs)) +
@@ -692,7 +697,7 @@ conf_gbm <- conf_matrix_gbm %>%
                         limits = c(0,100)) +
   theme_minimal() +
   theme(legend.position = 'none') +
-  labs(title = 'Mastriz de confusión (gbm)')
+  labs(title = 'Matriz de confusión (gbm)')
 
 conf_ET <- conf_matrix_ET %>% 
   ggplot(aes(pred, obs)) +
@@ -702,7 +707,7 @@ conf_ET <- conf_matrix_ET %>%
                         limits = c(0,100)) +
   theme_minimal() +
   theme(legend.position = 'none') +
-  labs(title = 'Mastriz de confusión (extraTrees)')
+  labs(title = 'Matriz de confusión (extraTrees)')
 
 acc_df <- data.frame(modelo = c('regularizacion', 'gbm', 'extra_trees'),
 		     accuracy = c(acc_reg, acc_gbm, acc_ET))
